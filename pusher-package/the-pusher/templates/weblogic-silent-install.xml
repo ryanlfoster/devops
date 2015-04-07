@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+   <bea-installer> 
+     <input-fields>
+       <data-value name="BEAHOME" value="$baseDirectory/$appServer" />
+       <data-value name="WLS_INSTALL_DIR" value="$baseDirectory/$appServer/wlserver_$appServerVersion" />
+    <data-value name="LOCAL_JVMS" value="$JAVA_HOME"/>
+   </input-fields> 
+</bea-installer>

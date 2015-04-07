@@ -1,0 +1,106 @@
+<?xml version="1.0"?>
+<settings xmlns="http://maven.apache.org/SETTINGS/1.1.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.1.0
+                      http://maven.apache.org/xsd/settings-1.1.0.xsd">
+
+	<mirrors>
+		<mirror>
+			<!-- You will need to change the URL here to your corporate Maven repository which mirrors the internet. -->
+			<id>internet-mirror</id>
+			<url>PROJECT_REPOSITORY_GROUP_URL</url>
+			<mirrorOf>external:*</mirrorOf>
+		</mirror>
+	</mirrors>
+
+	<activeProfiles>
+		<activeProfile>mysql-dev-db</activeProfile>
+		<!-- <activeProfile>oracle-dev-db</activeProfile> -->
+		<activeProfile>with-asset-repository</activeProfile>   <!-- required for integration testing -->
+		<activeProfile>activemq-dev-jms</activeProfile>
+		<activeProfile>with-oauth2-resource</activeProfile>
+		<activeProfile>allow-snapshots-from-central</activeProfile>
+	</activeProfiles>
+
+	<profiles>
+		<profile>
+			<id>allow-snapshots-from-central</id>
+			<repositories>
+				<repository>
+					<!-- This is the recommended way of pointing central to our local repository. -->
+					<id>central</id>
+					<url>http://repo1.maven.org/?url-overridden-by-mirrorOf-above</url>
+					<releases>
+						<enabled>true</enabled>
+					</releases>
+					<snapshots>
+						<enabled>true</enabled>
+					</snapshots>
+				</repository>
+			</repositories>
+			<pluginRepositories>
+				<pluginRepository>
+					<id>central</id>
+					<!-- This is the recommended way of pointing central to our local repository. -->
+					<url>http://repo1.maven.org/?url-overridden-by-mirrorOf-above</url>
+					<releases>
+						<enabled>true</enabled>
+					</releases>
+					<snapshots>
+						<enabled>true</enabled>
+					</snapshots>
+				</pluginRepository>
+			</pluginRepositories>
+		</profile>
+        <profile>
+            <id>repository-urls</id>
+            <activation>
+                <activeByDefault>true</activeByDefault>
+            </activation>
+            <properties>
+                <!-- Release repository URLs -->
+                <ep.platform.release.repository.url>PROJECT_RELEASE_REPOSITORY_URL</ep.platform.release.repository.url>
+                <ep.extension.release.repository.url>PROJECT_RELEASE_REPOSITORY_URL</ep.extension.release.repository.url>
+                <ep.aem.commerce.release.repository.url>EP_FOR_AEM_PROJECT_RELEASE_REPOSITORY_URL</ep.aem.commerce.release.repository.url>
+
+                <!-- Snapshot repository URLs -->
+                <ep.platform.snapshot.repository.url>PROJECT_SNAPSHOT_REPOSITORY_URL</ep.platform.snapshot.repository.url>
+                <ep.extension.snapshot.repository.url>PROJECT_SNAPSHOT_REPOSITORY_URL</ep.extension.snapshot.repository.url>
+                <ep.aem.commerce.snapshot.repository.url>EP_FOR_AEM_PROJECT_SNAPSHOT_REPOSITORY_URL</ep.aem.commerce.snapshot.repository.url>
+            </properties>
+        </profile>
+	</profiles>
+	<!-- To use encrypted passwords see: http://maven.apache.org/guides/mini/guide-encryption.html#How_to_encrypt_server_passwords -->
+	<!-- Encrypted passwords require a ~/.m2/settings-security.xml file on Build Slaves -->
+	<servers>
+		<server>
+			<id>ep-platform-releases</id>
+			<username>MAVEN_DEPLOYER_USER_NAME</username>
+			<password>MAVEN_DEPLOYER_PASSWORD</password>
+		</server>
+		<server>
+			<id>ep-platform-snapshots</id>
+			<username>MAVEN_DEPLOYER_USER_NAME</username>
+			<password>MAVEN_DEPLOYER_PASSWORD</password>
+		</server>
+		<server>
+			<id>ep-extension-releases</id>
+			<username>MAVEN_DEPLOYER_USER_NAME</username>
+			<password>MAVEN_DEPLOYER_PASSWORD</password>
+		</server>
+		<server>
+			<id>ep-extension-snapshots</id>
+			<username>MAVEN_DEPLOYER_USER_NAME</username>
+			<password>MAVEN_DEPLOYER_PASSWORD</password>
+		</server>
+		<server>
+            <id>ep-aem-commerce-snapshots</id>
+            <username>MAVEN_DEPLOYER_USER_NAME</username>
+            <password>MAVEN_DEPLOYER_PASSWORD</password>
+        </server>
+        <server>
+            <id>ep-aem-commerce-releases</id>
+            <username>MAVEN_DEPLOYER_USER_NAME</username>
+            <password>MAVEN_DEPLOYER_PASSWORD</password>
+        </server>
+	</servers>
+
+</settings>

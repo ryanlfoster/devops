@@ -1,0 +1,1 @@
+This Accelerator Kit does not come with any warranty. Accelerator Kits are NOT governed by Elastic Path Software’s standard license agreement. The use of Accelerator Kits is governed by the following license: www.elasticpath.com/accelerator-kit-license-and-copyright

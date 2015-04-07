@@ -1,0 +1,152 @@
+deployWeblogicApp() {
+
+    if [[ ! ${uniqueWeblogicServers[*]} =~ "$server" ]]; then
+
+        # Stop Weblogic if it's running
+        if [[ ( $deployDb == 0 ) && ( $updateDb == 0 ) && ( `ssh $localUser@$server "test -e $baseDirectory/$appServer/EP/bin/stopWebLogic.sh && echo exists"` ) ]]; then
+            log detail "Stopping $appServer on $server..."
+            ssh $localUser@$server "cd $baseDirectory/$appServer/EP/bin/ && ./stopWebLogic.sh"
+
+            sleep 120
+
+            # Delete the existing symlink to Weblogic, the bea directory in user home and some other directories in /tmp 
+            log detail "Deleting symlink to existing Weblogic deployment..."
+            ssh $localUser@$server "cd $baseDirectory && rm -f $baseDirectory/$appServer && rm -rf $HOME/bea && rm -rf /tmp/wlstTemptestadmin"
+
+        fi
+
+        # Check the number of existing copies of the Tomcat directory and delete any over the max
+        oldAppServerDeployments=`ssh $localUser@$server "ls $baseDirectory | grep $appServer | wc -l"`
+        if [[ $oldAppServerDeployments -gt $maxOldAppServerDeployments ]]; then
+            log detail "Removing old Weblogic instances..."
+            ssh $localUser@$server "ls -dt $baseDirectory/*/ | grep $appServer-$appServerVersion | awk 'NR>max' max=$maxOldAppServerDeployments | xargs rm -rf"
+        fi
+
+        # Only get the Weblogic installer if we actually need it
+        # If the app server package is a URL, go get the package
+        # Only doing this for WebLogic for now - may want to expand to Tomcat too
+        if [[ ("$appServer" == "weblogic") && ("`echo $appServerPackage | cut -b 1-4`" == "http") ]]; then
+            log detail "Fetching $appServer from remote URL: $appServerPackage"
+            curl -s $appServerPackage > $workspaceDirectory/webapps/weblogic-installer.jar
+            appServerPackage="$workspaceDirectory/webapps/weblogic-installer.jar"
+        fi
+
+        log detail "Deploying default $appServer installer from: $appServerPackage"
+        ssh $localUser@$server "DATE=\$(date +%D-%H%M%S|sed -e 's/\//-/g') &&
+        mkdir $baseDirectory/$appServer-$appServerVersion-\$DATE &&
+        ln -s $baseDirectory/$appServer-$appServerVersion-\$DATE $baseDirectory/$appServer"
+        # !!! We're not deploying this from the works package so what are we going to do?
+        # !!! We'll use the works package for now for testing
+        # !!! This will now be picked up from file system (assumes the appServerPackage variable has the full path)
+        # At this point, appServerPackage is either a file reference, or if it's a URL, it's been downloaded and
+        # replaced with a file reference, so copy it onto the deployment server.
+        scp $appServerPackage $localUser@$server:$baseDirectory/$appServer/weblogic-installer.jar
+        log detail "Creating a new $appServer silent install answers file on $server..."
+        cat "$templatesDirectory/weblogic-silent-install.xml" | env_filter | ssh $localUser@$server "cat > $baseDirectory/$appServer/weblogic-silent-install.xml"
+        ssh $localUser@$server "java -jar $baseDirectory/$appServer/weblogic-installer.jar -mode=silent -silent_xml=$baseDirectory/$appServer/weblogic-silent-install.xml -log=$baseDirectory/$appServer/$appServer-install.log"
+
+        if [[ "$appServerVersion" == "10.3.6" ]]; then
+            # For Weblogic 11g
+            # Update the classpath in weblogic_home/wlserver../common/bin/commEnv.sh script to include the JPA2 support patch
+            log detail "Updating Weblogic classpath with JPA2 support patch..."
+            ssh $localUser@$server "sed -i -r 's|(WEBLOGIC_CLASSPATH=\")(\\\$\{JAVA_HOME\})(.*)|\1\$\{MODULES_DIR\}/com.oracle.jpa2support_1.0.0.0_2-1.jar\$\{CLASSPATHSEP\}\$\{MODULES_DIR\}/javax.persistence_1.1.0.0_2-0.jar\$\{CLASSPATHSEP\}\2\3|' $baseDirectory/$appServer/wlserver_$appServerVersion/common/bin/commEnv.sh"
+        elif [[ "$appServerVersion" == "12.1.1" ]]; then
+            # For Weblogic 12c
+            # Update the classpath in weblogic_home/wlserver../common/bin/commEnv.sh script to include the JAX bindings patch
+            log detail "Updating Weblogic classpath with JAX bindings patch..."
+            ssh $localUser@$server "sed -i -r 's|(WEBLOGIC_CLASSPATH=\")(\\\$\{JAVA_HOME\})(.*)|\1\$\{MODULES_DIR\}/databinding.override_1.0.0.0.jar\$\{CLASSPATHSEP\}\2\3|' $baseDirectory/$appServer/wlserver_$appServerVersion/common/bin/commEnv.sh"
+        fi
+
+        # Create a new wlst script to create the Weblogic domain
+        log detail "Creating EP domain on $appServer server..."
+        cat "$templatesDirectory/create-weblogic-domain.py" | env_filter | ssh $localUser@$server "cat > '$baseDirectory/$appServer/create-weblogic-domain.py'"
+        ssh $localUser@$server "cd $baseDirectory/$appServer/wlserver_$appServerVersion/common/bin && ./commEnv.sh &&
+            ./wlst.sh $baseDirectory/$appServer/create-weblogic-domain.py"
+        # Update the umask so files generated by the webapps can be viewed by other users (e.g. logs)
+        ssh $localUser@$server "sed -i -r 's/(umask ).*/\1022/g' $baseDirectory/$appServer/EP/bin/startWebLogic.sh"
+
+        log detail "Creating webapps directory on $server..."
+        ssh $localUser@$server "mkdir $baseDirectory/$appServer/webapps/"
+
+        # Start Weblogic
+        _startWebLogic
+
+        # Create a new wlst script to create the Weblogic jdbc datasource
+        log detail "Creating Weblogic data source for $dbVendor..."
+        cat "$templatesDirectory/create-weblogic-$dbVendor-data-source.py" | env_filter | ssh $localUser@$server "cat > '$baseDirectory/$appServer/create-weblogic-$dbVendor-data-source.py'"
+        ssh $localUser@$server "cd $baseDirectory/$appServer/wlserver_$appServerVersion/common/bin && ./commEnv.sh &&
+            ./wlst.sh $baseDirectory/$appServer/create-weblogic-$dbVendor-data-source.py"
+
+        # Create a new wlst script to configure SSL
+        log detail "Configuring SSL on $server..."
+        cat "$templatesDirectory/configure-weblogic-SSL.py" | env_filter | ssh $localUser@$server "cat > '$baseDirectory/$appServer/configure-weblogic-SSL.py'"
+        ssh $localUser@$server "cd $baseDirectory/$appServer/wlserver_$appServerVersion/common/bin && ./commEnv.sh &&
+            ./wlst.sh $baseDirectory/$appServer/configure-weblogic-SSL.py"
+
+        # Create JMS resources (JMS server, module, subdeployment, connection factory and topic)
+        log detail "Configuring JMS on $server..."
+        cat "$templatesDirectory/create-weblogic-jms-server.py" | env_filter | ssh $localUser@$server "cat > '$baseDirectory/$appServer/create-weblogic-jms-server.py'"
+        ssh $localUser@$server "cd $baseDirectory/$appServer/wlserver_$appServerVersion/common/bin && ./commEnv.sh &&
+            ./wlst.sh $baseDirectory/$appServer/create-weblogic-jms-server.py"
+
+        log detail "Removing Weblogic installer package..."
+        ssh $localUser@$server "rm -f $baseDirectory/$appServer/weblogic-installer.jar"
+        
+        sleep 10
+    fi
+
+    if [ ! `ssh $localUser@$server test -d $baseDirectory/$appServer/webapps/$currentContextPath  && echo exists` ]; then
+        log detail "Creating directory for $currentContextPath on $server..."
+        ssh $localUser@$server "mkdir -p $baseDirectory/$appServer/webapps/$currentContextPath"
+    fi
+
+    log detail "Copying $currentContextPath war file to $server..."
+    scp $workspaceDirectory/webapps/*$currentContextPath*.war $localUser@$server:$baseDirectory/$appServer/webapps/$currentContextPath/$currentContextPath.war
+    log detail "Extracting $currentContextPath war file on $server..."
+    ssh $localUser@$server "unzip -qo $baseDirectory/$appServer/webapps/$currentContextPath/$currentContextPath.war -d $baseDirectory/$appServer/webapps/$currentContextPath/"
+
+    _filterWebLogicContextPath $currentContextPath
+
+    log detail "Deploying $currentContextPath to Weblogic server..."
+    cat "$templatesDirectory/deploy-weblogic-application.py" | env_filter | ssh $localUser@$server "cat > '$baseDirectory/$appServer/deploy-weblogic-application.py'"
+
+    ssh $localUser@$server "cd $baseDirectory/$appServer/wlserver_$appServerVersion/common/bin && ./commEnv.sh &&
+                ./wlst.sh $baseDirectory/$appServer/deploy-weblogic-application.py"
+
+}
+
+_startWebLogic () {
+
+    # Start Weblogic
+    log detail "Starting Weblogic on $server..."
+
+    # Startup Parameters for WebLogic - should likely be moved into the config file
+    wlParams="export USER_MEM_ARGS='-Xms3072m -Xmx4096m -XX:MaxPermSize=1024m'; export DOMAIN_PRODUCTION_MODE='true'"
+    ssh $localUser@$server "$wlParams; nohup $baseDirectory/$appServer/EP/bin/startWebLogic.sh < /dev/null &> /dev/null &"
+
+    # Wait until console is up - gives us an idea weblogic is ready
+    #log detail "Waiting for WebLogic to start up on $server "
+    #rc=0
+    #while [ "$rc" -ne "200" ]; do
+    #    echo -n "."
+    #    #rc=$(curl -sL -w "%{http_code}" "http://${x}:7001/console/login/LoginForm.jsp" -o /dev/null)
+    #    sleep 5
+    #done
+    # Sleep a little more for good measure
+    #sleep 10
+
+    sleep 240
+
+    return 0
+}
+
+_filterWebLogicContextPath () {
+
+    theContextPath=$1
+
+    log detail "Filtering context path in weblogic.xml to ${theContextPath} ..."
+
+    ssh $localUser@$server "perl -p -i -e 's|<wls:context-root>/searchserver</wls:context-root>|<wls:context-root>/${theContextPath}</wls:context-root>|g' $baseDirectory/$appServer/webapps/$theContextPath/WEB-INF/weblogic.xml"
+
+    return 0
+}
