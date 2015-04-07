@@ -5,7 +5,7 @@
 	<parent>
 		<groupId>com.company.ep</groupId>
 		<artifactId>devops-parent</artifactId>
-		<version>1.0-SNAPSHOT</version>
+		<version>0-SNAPSHOT</version>
 	</parent>
 
 	<artifactId>pusher-package</artifactId>
